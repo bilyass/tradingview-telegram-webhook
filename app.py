@@ -1,35 +1,46 @@
-import requests
-import json
 from flask import Flask, request
+import requests
+from datetime import datetime
 import os
+import pytz
 
 app = Flask(__name__)
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+# Telegram bilgileri
+BOT_TOKEN = "8512959734:AAEtC6AbLHY-S0tdNohiAODl_Udoq5794us"
+CHAT_ID = "-5017329899"
 
-@app.route('/webhook', methods=['POST'])
+@app.route("/webhook", methods=["POST"])
 def webhook():
-    data_raw = request.data.decode("utf-8")
+    data = request.json
+
+    signal = data.get("signal")
+    ticker = data.get("ticker")
+    price = data.get("close")
+    time_raw = data.get("time")
+
+    # UTC → Türkiye saati
     try:
-        data = json.loads(data_raw)
-    except Exception as e:
-        return f"Invalid JSON: {e}", 400
+        dt = datetime.fromisoformat(time_raw.replace("Z", "+00:00"))
+        istanbul_tz = pytz.timezone("Europe/Istanbul")
+        dt_tr = dt.astimezone(istanbul_tz)
+        date_str = dt_tr.strftime("%Y-%m-%d")
+        time_str = dt_tr.strftime("%H:%M:%S")
+    except:
+        date_str = time_raw
+        time_str = ""
 
-    signal = data.get("signal", "")
-    ticker  = data.get("ticker", "")
-    close   = data.get("close", "")
-    time    = data.get("time", "")
+    message = f"{signal}   {ticker}\nSaat:  {date_str}     {time_str}\nFiyat:  {price}"
 
-    message = f"{signal}  {ticker}\nSaat: {time}\nFiyat: {close}"
+    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+    requests.post(url, data={"chat_id": CHAT_ID, "text": message})
 
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": message}
+    return {"status": "ok"}
 
-    try:
-        r = requests.post(url, json=payload)
-        r.raise_for_status()
-    except Exception as e:
-        return f"Telegram send failed: {e}", 500
+@app.route("/")
+def home():
+    return "Bot çalışıyor!"
 
-    return "OK", 200
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
